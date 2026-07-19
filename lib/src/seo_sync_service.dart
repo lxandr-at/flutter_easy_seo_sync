@@ -4,15 +4,46 @@ import 'package:http/http.dart' as http;
 import 'package:http/io_client.dart';
 import 'package:http_parser/http_parser.dart'; // Required for setting explicit MediaType
 
+/// A REST client that synchronizes generated SEO data with a backend API.
+///
+/// Use this service to push rendered HTML pages and XML sitemaps to the
+/// server-side rendering pipeline provided by
+/// [flutter_easy_seo_api](https://github.com/lxandr-at/flutter_easy_seo_api).
+///
+/// ```dart
+/// final service = SEOSyncService(
+///   apiKey: 'your-api-key',
+///   apiUrl: 'https://seo-api.example.com',
+///   appName: 'my-app',
+/// );
+///
+/// await service.sendGeneratedData(html: renderedHtml, path: '/blog/post-1');
+/// await service.sendSitemap(sitemapXmlContent: sitemapXml);
+/// ```
 class SEOSyncService {
+  /// Creates an [SEOSyncService].
+  ///
+  /// [apiKey] is sent in the `X-API-Key` request header.
+  /// [apiUrl] is the base URL of the backend API (without a trailing slash).
+  /// [appName] is an optional identifier included in every request payload.
   SEOSyncService({
     required this.apiKey,
     required this.apiUrl,
     this.appName = "",
   });
 
+  /// The API key sent in the `X-API-Key` header of every request.
   final String apiKey;
+
+  /// The base URL of the SEO backend API (no trailing slash).
+  ///
+  /// For example: `https://seo-api.example.com`.
   final String apiUrl;
+
+  /// An optional application identifier included in multipart request fields.
+  ///
+  /// Defaults to an empty string. When provided, it is sent as the `app_name`
+  /// field alongside the file payload.
   final String appName;
 
   Future<void> _sendMultipart({
@@ -67,6 +98,18 @@ class SEOSyncService {
     }
   }
 
+  /// Sends a rendered HTML page to the backend for SEO processing.
+  ///
+  /// The [html] string is uploaded as a multipart file named `index.html`
+  /// to the `{apiUrl}/generatedSEOPage` endpoint.
+  ///
+  /// The [path] is the URL path the page will be served at (e.g. `/blog/post`).
+  /// If [path] is empty, `/` is used instead.
+  ///
+  /// When [forceIOClient] is `true`, a custom [IOClient] is created that
+  /// bypasses bad-certificate errors for `localhost`, `127.0.0.1`, and
+  /// Android emulator addresses (`10.0.2.*`) in debug mode. Use this for
+  /// local development with self-signed certificates.
   Future<void> sendGeneratedData({
     required String html,
     required String path,
@@ -88,6 +131,18 @@ class SEOSyncService {
     );
   }
 
+  /// Sends an XML sitemap to the backend for indexing.
+  ///
+  /// The [sitemapXmlContent] string is uploaded as a multipart file to
+  /// the `{apiUrl}/generatedSitemap` endpoint.
+  ///
+  /// [filename] defaults to `sitemap.xml` but can be overridden for
+  /// localized sitemaps (e.g. `sitemap_de.xml`).
+  ///
+  /// When [forceIOClient] is `true`, a custom [IOClient] is created that
+  /// bypasses bad-certificate errors for `localhost`, `127.0.0.1`, and
+  /// Android emulator addresses (`10.0.2.*`) in debug mode. Use this for
+  /// local development with self-signed certificates.
   Future<void> sendSitemap({
     required String sitemapXmlContent,
     String filename = 'sitemap.xml',

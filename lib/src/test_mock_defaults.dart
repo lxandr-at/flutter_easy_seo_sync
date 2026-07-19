@@ -3,7 +3,40 @@ import 'package:flutter_test/flutter_test.dart';
 import 'dart:io';
 import 'package:path/path.dart' as p; // Pure Dart package, no Flutter dependency
 
+/// Provides mock platform channel handlers for running Flutter widget tests
+/// in a headless environment.
+///
+/// Call [useHeadlessDefaultMocks] once at the start of a test suite or
+/// individual test to register all default mocks. This eliminates
+/// `MissingPluginException` errors caused by native plugin channels
+/// that are unavailable outside a real device.
+///
+/// The following channels are mocked:
+///
+/// | Channel | Behavior |
+/// |---|---|
+/// | `plugins.flutter.io/path_provider` | Returns `.` for all directories |
+/// | `dev.fluttercommunity.plus/connectivity` | Returns `['wifi']` |
+/// | `plugins.flutter.io/shared_preferences` | Stores values in memory |
+///
+/// Real network requests are also unblocked by resetting
+/// [HttpOverrides.global] to `null`.
 class EasySEOMockPlatformChannels {
+  /// Registers all default mock platform channel handlers.
+  ///
+  /// Call this once before any widget is pumped:
+  ///
+  /// ```dart
+  /// void main() {
+  ///   setUpAll(() {
+  ///     EasySEOMockPlatformChannels.useHeadlessDefaultMocks();
+  ///   });
+  ///
+  ///   testWidgets('renders correctly', (tester) async {
+  ///     await tester.pumpWidget(const MyApp());
+  ///   });
+  /// }
+  /// ```
   static void useHeadlessDefaultMocks() {
     _allowRealNetWorkRequests();
     _mockPathProvider();
@@ -92,17 +125,40 @@ class EasySEOMockPlatformChannels {
   }
 }
 
+/// A lightweight JSON-backed cache for storing image metadata during tests.
+///
+/// When running under the `FLUTTER_TEST` environment variable (i.e. inside
+/// `flutter test`), the repository operates entirely in memory with no
+/// file system side effects. Outside of tests it persists data to a JSON
+/// file in the system temp directory.
+///
+/// This class is used internally by [testSeoWidgets] to manage cached
+/// image data across test setup and teardown.
 class JsonCacheInfoRepository {
+  /// The logical name for this cache instance.
+  ///
+  /// Maps to `{databaseName}.json` on disk when running outside of tests.
   final String databaseName;
   File? _targetFile;
   bool _isInitialized = false;
   final Map<String, dynamic> _memoryStorage = {};
 
+  /// Creates a [JsonCacheInfoRepository] with the given [databaseName].
+  ///
+  /// Call [open] after construction to initialize the cache.
   JsonCacheInfoRepository({required this.databaseName});
 
   bool get _isUnderTest => Platform.environment.containsKey('FLUTTER_TEST');
 
-  /// Initialize the cache file target using native OS paths
+  /// Initializes the cache.
+  ///
+  /// Under the `FLUTTER_TEST` environment, this sets up an in-memory store
+  /// with no file system interaction. Outside of tests it creates a
+  /// directory at `{systemTemp}/flutter_easy_seo_cache/` and targets
+  /// `{databaseName}.json` inside it.
+  ///
+  /// This method is idempotent and returns immediately if already
+  /// initialized.
   Future<void> open() async {
     if (_isInitialized) return;
 
@@ -120,6 +176,10 @@ class JsonCacheInfoRepository {
     _isInitialized = true;
   }
 
+  /// Clears the cache.
+  ///
+  /// Under the `FLUTTER_TEST` environment, this clears the in-memory map.
+  /// Outside of tests it deletes the JSON file from disk if it exists.
   Future<void> deleteDataFile() async {
     if (_isUnderTest) {
       _memoryStorage.clear();

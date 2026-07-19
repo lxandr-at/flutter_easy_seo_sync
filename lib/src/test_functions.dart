@@ -6,8 +6,20 @@ import 'package:meta/meta.dart';
 
 import 'test_mock_defaults.dart'; // Pure Dart package, no Flutter dependency
 
-/// Inject the [initialRoute] into the platform channel BEFORE pumpWidget
-/// This simulates the browser opening with this URL already in the address bar
+/// Injects a mock [initialRoute] into the `SystemChannels.navigation`
+/// platform channel before [WidgetTester.pumpWidget] is called.
+///
+/// This simulates the browser opening at a specific URL so that
+/// route-dependent widgets (e.g. deep links) are tested from the
+/// correct starting point.
+///
+/// ```dart
+/// testSeoWidgets('loads blog post', (tester) async {
+///   setRouteBeforePumpWidget(tester, '/blog/post-1');
+///   await tester.pumpWidget(const MyApp());
+///   // ...
+/// });
+/// ```
 void setRouteBeforePumpWidget(WidgetTester tester, String initialRoute) {
   tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
       SystemChannels.navigation, (methodCall) async {
@@ -18,9 +30,16 @@ void setRouteBeforePumpWidget(WidgetTester tester, String initialRoute) {
   });
 }
 
-/// Step out of fake async zone while waiting for a [condition] to allow
-/// real world async operations to finish. Increase [timeout] for long
-/// running operations accordingly (e.g. loading lots of db data).
+/// Polls [condition] until it returns `true` or [timeout] elapses.
+///
+/// Steps out of the fake-async zone on each iteration to allow real-world
+/// async operations (network mocks, engine updates) to settle. A small
+/// [pump] call is issued each cycle to flush the microtask queue and
+/// trigger layout rebuilds.
+///
+/// Throws an [Exception] if the condition is not met within [timeout].
+/// Increase [timeout] for long-running operations such as bulk database
+/// loads.
 Future<void> waitUntilReady(
     WidgetTester tester,
     bool Function() condition, {
@@ -42,10 +61,23 @@ Future<void> waitUntilReady(
   }
 }
 
-/// Waits for a specific [route] to be structurally ready within the [timeout} and handles lifecycle checks.
+/// Waits until a widget with `ValueKey(route)` exists in the tree **and**
+/// [EasySEOManager.instance.seoPageIsReady] returns `true`.
 ///
-/// The [extraCheck] callback allows to inject custom evaluation rules such as
-/// language propagation or global state verifications.
+/// This combines structural DOM checks with the SEO lifecycle readiness
+/// check to ensure the page is fully rendered and SEO metadata is
+/// propagated before assertions run.
+///
+/// An optional [extraCheck] callback can be provided for additional
+/// assertions such as verifying language propagation or global state.
+///
+/// ```dart
+/// await waitForRoute('/blog/post-1', tester, extraCheck: () {
+///   return EasySEOManager.instance.currentLang == 'en';
+/// });
+/// ```
+///
+/// Throws an [Exception] if the condition is not met within [timeout].
 Future<void> waitForRoute(
     String route,
     WidgetTester tester, {
@@ -72,6 +104,27 @@ Future<void> waitForRoute(
   debugPrint('🚀 [TEST] DONE waiting for: $route');
 }
 
+/// A drop-in replacement for [testWidgets] that configures the test
+/// environment for SEO-related widget tests.
+///
+/// Automatically performs the following setup and teardown:
+///
+/// **Setup:**
+/// - Suppresses Flutter overflow errors (common in test resolution mismatches).
+/// - Sets a 1920x1080 physical size at 1.0 device pixel ratio.
+/// - Opens a [JsonCacheInfoRepository] for cached image data.
+///
+/// **Teardown (guaranteed via `finally`):**
+/// - Deletes the cache data file.
+/// - Restores the original [FlutterError.onError] handler.
+/// - Resets physical size and device pixel ratio.
+///
+/// ```dart
+/// testSeoWidgets('renders SEO tags correctly', (tester) async {
+///   await tester.pumpWidget(const MyApp());
+///   expect(find.byKey(const ValueKey('/home')), findsOneWidget);
+/// });
+/// ```
 @isTest
 void testSeoWidgets(
     String description,
